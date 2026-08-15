@@ -1,0 +1,17 @@
+{
+  "id": "essential-tab-opener",
+  "name": "Essential Tab Opener",
+  "description": "Plain left-click on an Essential Tab duplicates it as a normal tab and keeps the original Essential Tab.",
+  "homepage": "https://github.com/FuzikGit/essential-tab-opener",
+  "preferences": "preferences.json",
+  "readme": "README.md",
+  "author": "FuzikGit",
+  "version": "1.4.0",
+  "tags": ["JavaScript", "Essential Tabs", "Tabs"],
+  "fork": ["zen"],
+  "scripts": {
+    "essential-tab-opener.uc.js": {
+      "include": ["chrome://browser/content/browser.xhtml"]
+    }
+  }
+}
