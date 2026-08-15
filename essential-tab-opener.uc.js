@@ -4,6 +4,7 @@
   const PREF_ENABLED = "extensions.essentialtabopener.enabled";
   const LOG = "[Essential Tab Opener]";
   const duplicateOrigins = new WeakMap();
+  const CLONE_ATTR = "data-essential-tab-opener-clone";
   const essentialIcons = new WeakMap();
 
   function isEnabled() {
@@ -180,6 +181,7 @@
       }
 
       duplicateOrigins.set(newTab, sourceTab);
+      newTab.setAttribute(CLONE_ATTR, "true");
       gBrowser.selectedTab = newTab;
       animateEssentialToNormal(sourceTab, newTab);
       await unloadEssential(sourceTab);
@@ -285,106 +287,99 @@
     return true;
   }
 
-  let pendingCloseSelection = null;
-  let pendingCloseTimer = null;
+  function chooseNormalNeighbour(closingTab) {
+    const tabs = Array.from(gBrowser.tabs || []);
+    const index = tabs.indexOf(closingTab);
+    if (index < 0) return getAnyNormalTab(closingTab);
 
-  function isUsableFallbackTab(tab) {
-    return !!(tab && tab.isConnected && !tab.closing &&
-      !tab.hidden && !tab.pinned && !tab.hasAttribute("zen-essential"));
+    // Prefer the tab immediately to the right, then to the left.
+    for (let i = index + 1; i < tabs.length; i++) {
+      if (isNormalOpenTab(tabs[i], closingTab)) return tabs[i];
+    }
+    for (let i = index - 1; i >= 0; i--) {
+      if (isNormalOpenTab(tabs[i], closingTab)) return tabs[i];
+    }
+    return null;
   }
 
-  function setPendingCloseSelection(targetTab) {
-    pendingCloseSelection = targetTab || null;
+  function getHomepageTabOrCreate() {
+    const blank = Array.from(gBrowser.tabs || []).find(tab =>
+      isNormalOpenTab(tab) && isBlankTab(tab)
+    );
+    if (blank) return blank;
 
-    if (pendingCloseTimer) {
-      clearTimeout(pendingCloseTimer);
-    }
-
-    // Give native Zen tab-selection logic a short window to finish.
-    pendingCloseTimer = setTimeout(() => {
-      pendingCloseSelection = null;
-      pendingCloseTimer = null;
-    }, 1200);
+    return gBrowser.addTab(getHomepage(), {
+      inBackground: true,
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()
+    });
   }
 
-  function enforcePendingCloseSelection() {
-    const target = pendingCloseSelection;
-    if (!target) return false;
-    if (!gBrowser || !gBrowser.window || gBrowser.window.closed) return false;
+  function closeCloneBeforeZenHandlesIt(closingTab) {
+    if (!closingTab || !closingTab.hasAttribute(CLONE_ATTR)) return false;
 
-    if (isUsableFallbackTab(target)) {
-      // Only override Zen if it landed on the transient/special tab that
-      // appears after closing one of our generated tabs.
-      const current = gBrowser.selectedTab;
-      const currentIsSpecial = !isUsableFallbackTab(current);
-      if (currentIsSpecial || current === null) {
-        gBrowser.selectedTab = target;
-        return true;
-      }
+    const target = chooseNormalNeighbour(closingTab);
 
-      // If Zen already selected an ordinary tab, leave the native selection alone.
+    // If another normal tab exists, select it BEFORE removing the clone.
+    if (target) {
+      gBrowser.selectedTab = target;
+      gBrowser.removeTab(closingTab);
       return true;
     }
 
-    // No remembered neighbour survived the close. Find any remaining ordinary tab.
-    const anyNormal = getAnyNormalTab();
-    if (anyNormal) {
-      gBrowser.selectedTab = anyNormal;
-      return true;
-    }
-
-    // No ordinary tabs left: load the homepage into an existing ordinary blank tab
-    // when possible, otherwise create one.
-    const current = gBrowser.selectedTab;
-    if (current && !current.pinned && !current.hasAttribute("zen-essential") && isBlankTab(current)) {
-      current.linkedBrowser.loadURI(getHomepage(), {
-        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()
-      });
-      return true;
-    }
-
-    gBrowser.addTab(getHomepage(), { inBackground: false });
+    // No other normal tab exists. Create/select the homepage first, then close
+    // the clone. This prevents Zen from falling back to an Essential Tab or an
+    // empty transient page.
+    const homeTab = getHomepageTabOrCreate();
+    gBrowser.selectedTab = homeTab;
+    gBrowser.removeTab(closingTab);
     return true;
   }
 
-  function handleTabSelect() {
-    if (!pendingCloseSelection) return;
+  function handleCloneCloseClick(event) {
+    if (!isPlainLeftClick(event)) return;
+    if (!(event.target instanceof Element)) return;
 
-    // Let Zen finish its own selection first, then correct only an unwanted
-    // Essential/Pinned/blank selection caused by closing our generated tab.
-    setTimeout(enforcePendingCloseSelection, 0);
-    setTimeout(enforcePendingCloseSelection, 40);
-    setTimeout(enforcePendingCloseSelection, 120);
+    const closeButton = event.target.closest(".tab-close-button");
+    if (!closeButton) return;
+
+    const tab = closeButton.closest("tab.tabbrowser-tab");
+    if (!tab || !tab.hasAttribute(CLONE_ATTR)) return;
+
+    // Take control before Zen's own close command/selection logic runs.
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    duplicateOrigins.delete(tab);
+    closeCloneBeforeZenHandlesIt(tab);
   }
 
-  function handleTabClose(event) {
-    const closingTab = event.target;
-    const source = duplicateOrigins.get(closingTab);
-    if (!source) return;
+  function handleCloneMiddleClick(event) {
+    if (!(event.target instanceof Element)) return;
+    if (event.button !== 1) return;
 
-    // Calculate the desired neighbour while the closing tab still exists.
-    const fallbackTab = getNearestNormalTab(closingTab);
-    duplicateOrigins.delete(closingTab);
-    setPendingCloseSelection(fallbackTab);
+    const tab = event.target.closest("tab.tabbrowser-tab");
+    if (!tab || !tab.hasAttribute(CLONE_ATTR)) return;
 
-    // Do not force selection immediately inside TabClose. Zen performs its
-    // own post-close selection after this event, which was the source of the
-    // blank/Essential-tab regression in the previous version.
-    setTimeout(enforcePendingCloseSelection, 0);
-    setTimeout(enforcePendingCloseSelection, 40);
-    setTimeout(enforcePendingCloseSelection, 120);
-    setTimeout(enforcePendingCloseSelection, 250);
+    // Middle-clicking a tab closes it in Zen/Firefox. Apply the same safe
+    // selection logic before removing our generated clone.
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    duplicateOrigins.delete(tab);
+    closeCloneBeforeZenHandlesIt(tab);
   }
 
   function install() {
     const tabs = document.getElementById("tabbrowser-tabs");
     if (!tabs) return setTimeout(install, 500);
 
+    tabs.addEventListener("click", handleCloneCloseClick, true);
     tabs.addEventListener("click", duplicateEssential, true);
-    gBrowser.tabContainer.addEventListener("TabClose", handleTabClose, true);
-    gBrowser.tabContainer.addEventListener("TabSelect", handleTabSelect, true);
+    tabs.addEventListener("auxclick", handleCloneMiddleClick, true);
 
-    console.log(LOG, "Loaded 1.12.0");
+    console.log(LOG, "Loaded 1.14.0");
   }
 
   install();
