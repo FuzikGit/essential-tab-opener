@@ -27,50 +27,62 @@
     );
   }
 
-  function unloadEssential(tab) {
+  async function unloadEssential(tab) {
     try {
       if (!tab || !tab.isConnected || !tab.hasAttribute("zen-essential")) return;
       if (tab.hasAttribute("pending")) return;
 
-      // Zen keeps the Essential Tab favicon separately. Unloading the tab can
-      // cause Firefox to clear the normal tab image; preserve the Essential
-      // icon before unloading and restore it afterwards.
-      const essentialIcon =
+      // Capture the Essential icon before unload. Zen stores the dedicated
+      // Essential icon in --zen-essential-tab-icon, while the tab's normal
+      // image/session state may be cleared by explicitUnloadTabs().
+      let essentialIcon =
         tab.getAttribute("image") ||
         tab.zenStaticIcon ||
         tab.style.getPropertyValue("--zen-essential-tab-icon");
 
-      const ok = gBrowser.explicitUnloadTabs([tab]);
-      if (!ok) {
+      if (!essentialIcon) {
+        essentialIcon = "";
+      }
+
+      // Normalize url(...) from the CSS custom property to the raw icon URL.
+      const iconUrl = essentialIcon.startsWith("url(")
+        ? essentialIcon.replace(/^url\\((?:\"|')?(.*?)(?:\"|')?\\)$/, "$1")
+        : essentialIcon;
+
+      // IMPORTANT: explicitUnloadTabs() is asynchronous. The previous version
+      // restored the icon on the next animation frame, which could happen
+      // BEFORE Zen finished saving the unloaded tab state. Zen then overwrote
+      // our icon with the empty state. Wait for the native unload to finish.
+      const successful = await gBrowser.explicitUnloadTabs([tab]);
+      if (!successful) {
         console.warn(LOG, "explicitUnloadTabs returned false");
         return;
       }
 
-      if (essentialIcon) {
-        requestAnimationFrame(() => {
-          try {
-            if (!tab.isConnected || !tab.hasAttribute("zen-essential")) return;
+      if (!tab.isConnected || !tab.hasAttribute("zen-essential")) return;
 
-            // Restore the underlying image attribute when it was cleared.
-            if (!tab.getAttribute("image") && !essentialIcon.startsWith("url(")) {
-              tab.setAttribute("image", essentialIcon);
-            }
+      if (iconUrl) {
+        // Restore Zen's Essential-specific CSS icon.
+        if (typeof gZenPinnedTabManager !== "undefined" &&
+            gZenPinnedTabManager &&
+            typeof gZenPinnedTabManager.setEssentialTabIcon === "function") {
+          gZenPinnedTabManager.setEssentialTabIcon(tab, iconUrl);
+        }
 
-            // Restore Zen's dedicated Essential icon variable.
-            if (typeof gZenPinnedTabManager !== "undefined" &&
-                gZenPinnedTabManager &&
-                typeof gZenPinnedTabManager.setEssentialTabIcon === "function") {
-              const iconUrl = essentialIcon.startsWith("url(")
-                ? essentialIcon.replace(/^url\((?:\"|')?(.*?)(?:\"|')?\)$/, "$1")
-                : essentialIcon;
-              if (iconUrl) {
-                gZenPinnedTabManager.setEssentialTabIcon(tab, iconUrl);
-              }
-            }
-          } catch (e) {
-            console.error(LOG, "Failed to restore Essential Tab icon:", e);
-          }
-        });
+        // Restore the DOM image attribute if the native unload cleared it.
+        if (!tab.getAttribute("image")) {
+          tab.setAttribute("image", iconUrl);
+        }
+
+        // Most importantly, persist the icon in Firefox/Zen's session state so
+        // it survives another unload and a full browser restart.
+        try {
+          const state = JSON.parse(SessionStore.getTabState(tab));
+          state.image = iconUrl;
+          SessionStore.setTabState(tab, state);
+        } catch (stateError) {
+          console.error(LOG, "Failed to persist Essential Tab icon:", stateError);
+        }
       }
     } catch (e) {
       console.error(LOG, "Failed to unload Essential Tab:", e);
@@ -138,7 +150,7 @@
     }
   }
 
-  function convertDuplicateToNormalTab(newTab, sourceTab) {
+  async function convertDuplicateToNormalTab(newTab, sourceTab) {
     if (!newTab || !newTab.isConnected) return;
     try {
       if (typeof gZenPinnedTabManager !== "undefined" &&
@@ -158,7 +170,7 @@
       animateEssentialToNormal(sourceTab, newTab);
 
       // The original Essential remains as a button, but its document is unloaded.
-      unloadEssential(sourceTab);
+      await unloadEssential(sourceTab);
     } catch (e) {
       console.error(LOG, "Failed to convert duplicate:", e);
     }

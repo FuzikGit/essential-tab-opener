@@ -1,4 +1,4 @@
-# Essential Tab Opener 1.8.0
+# Essential Tab Opener 1.7.0
 
 Sine mod for Zen Browser 1.21.14b.
 
@@ -27,5 +27,8 @@ When a plain left-click opens an Essential Tab, the tab content is shown in a sh
 ## Animation 1.7.0
 The animation now moves the visual tab content from the Essential Tab to the normal-tab section while simultaneously scaling from the Essential Tab size to the exact normal-tab size.
 
-## 1.8.0
+## 1.9.0
 Fixes Essential Tab favicon loss after unloading the original Essential Tab. The mod preserves and restores Zen's dedicated Essential icon state after `explicitUnloadTabs()`.
+
+
+Version 1.9.0 waits for Zen's asynchronous unload to complete and persists the Essential favicon in SessionStore so it survives repeated unloads and browser restarts.
