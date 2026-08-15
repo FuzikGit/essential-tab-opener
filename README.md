@@ -1,38 +1,13 @@
-# Essential Tab Opener 1.7.0
+# Essential Tab Opener 1.11.0
 
-Sine mod for Zen Browser 1.21.14b.
+Sine JavaScript mod for Zen Browser 1.21.14b.
 
 ## Behavior
 
-A plain left click on an Essential Tab:
-- duplicates it using native `gBrowser.duplicateTab()`;
-- converts the duplicate to a normal tab using Zen's `removeEssentials()`;
-- keeps the original Essential Tab button;
-- unloads the original Essential Tab document from memory;
-- selects the new normal tab.
-
-When the generated normal duplicate is later closed:
-- the next visible normal (non-pinned, non-essential) tab is selected;
-- if no other normal tab exists, the browser homepage is opened.
-
-Modifier clicks and tab action buttons keep Zen's normal behavior.
-
-Requires `sine.allow-unsafe-js = true` for a GitHub/unpublished JavaScript mod.
-
-## Animation
-
-When a plain left-click opens an Essential Tab, the tab content is shown in a short floating animation that moves from the Essential Tabs area to the new normal tab. The original Essential Tab remains in place and is unloaded.
-
-
-## Animation 1.7.0
-The animation now moves the visual tab content from the Essential Tab to the normal-tab section while simultaneously scaling from the Essential Tab size to the exact normal-tab size.
-
-## 1.9.0
-Fixes Essential Tab favicon loss after unloading the original Essential Tab. The mod preserves and restores Zen's dedicated Essential icon state after `explicitUnloadTabs()`.
-
-
-Version 1.9.0 waits for Zen's asynchronous unload to complete and persists the Essential favicon in SessionStore so it survives repeated unloads and browser restarts.
-
-
-## 1.10.0
-Fixed tab selection after closing a duplicated normal tab. The mod now determines the fallback tab before TabClose, waits for Zen's native selection handling, prefers the next normal tab to the right (then left), and only opens/reuses the homepage when no other normal tabs remain.
+- Plain left-click on an Essential Tab creates a normal duplicate.
+- The original Essential Tab remains in the Essential section and is unloaded.
+- The Essential icon is preserved across repeated use and browser restarts.
+- The duplicate is selected.
+- When a duplicate created by this mod is closed, Zen selects the nearest normal tab instead of an Essential tab.
+- If no other normal tab exists, the current blank normal tab is reused for the homepage; otherwise one homepage tab is created.
+- Modifier clicks and tab action buttons retain native behavior.

@@ -4,6 +4,7 @@
   const PREF_ENABLED = "extensions.essentialtabopener.enabled";
   const LOG = "[Essential Tab Opener]";
   const duplicateOrigins = new WeakMap();
+  const essentialIcons = new WeakMap();
 
   function isEnabled() {
     try { return Services.prefs.getBoolPref(PREF_ENABLED, true); }
@@ -27,32 +28,72 @@
     );
   }
 
+  function cssIconToUrl(value) {
+    if (!value) return "";
+    const v = String(value).trim();
+    if (!v || v === "none") return "";
+    const match = v.match(/^url\(["']?(.*?)["']?\)$/);
+    return match ? match[1] : v;
+  }
+
+  function captureEssentialIcon(tab) {
+    if (!tab) return "";
+
+    if (essentialIcons.has(tab)) {
+      return essentialIcons.get(tab) || "";
+    }
+
+    let icon = tab.zenStaticIcon || "";
+    if (!icon) icon = cssIconToUrl(tab.style.getPropertyValue("--zen-essential-tab-icon"));
+    if (!icon) icon = tab.getAttribute("image") || "";
+
+    // Last-resort: get the image from the current session state.
+    if (!icon) {
+      try {
+        const state = JSON.parse(SessionStore.getTabState(tab));
+        icon = state.image || "";
+      } catch {}
+    }
+
+    essentialIcons.set(tab, icon || "");
+    return icon || "";
+  }
+
+  function persistEssentialIcon(tab, iconUrl) {
+    if (!tab || !iconUrl || !tab.isConnected) return;
+    essentialIcons.set(tab, iconUrl);
+
+    try {
+      if (typeof gZenPinnedTabManager !== "undefined" &&
+          gZenPinnedTabManager &&
+          typeof gZenPinnedTabManager.setEssentialTabIcon === "function") {
+        gZenPinnedTabManager.setEssentialTabIcon(tab, iconUrl);
+      }
+    } catch (e) {
+      console.error(LOG, "setEssentialTabIcon failed:", e);
+    }
+
+    try {
+      tab.setAttribute("image", iconUrl);
+    } catch {}
+
+    try {
+      const state = JSON.parse(SessionStore.getTabState(tab));
+      state.image = iconUrl;
+      SessionStore.setTabState(tab, state);
+    } catch (e) {
+      console.error(LOG, "SessionStore icon persistence failed:", e);
+    }
+  }
+
   async function unloadEssential(tab) {
     try {
       if (!tab || !tab.isConnected || !tab.hasAttribute("zen-essential")) return;
       if (tab.hasAttribute("pending")) return;
 
-      // Capture the Essential icon before unload. Zen stores the dedicated
-      // Essential icon in --zen-essential-tab-icon, while the tab's normal
-      // image/session state may be cleared by explicitUnloadTabs().
-      let essentialIcon =
-        tab.getAttribute("image") ||
-        tab.zenStaticIcon ||
-        tab.style.getPropertyValue("--zen-essential-tab-icon");
+      // IMPORTANT: keep the first known Essential icon forever for this tab.
+      const iconUrl = captureEssentialIcon(tab);
 
-      if (!essentialIcon) {
-        essentialIcon = "";
-      }
-
-      // Normalize url(...) from the CSS custom property to the raw icon URL.
-      const iconUrl = essentialIcon.startsWith("url(")
-        ? essentialIcon.replace(/^url\\((?:\"|')?(.*?)(?:\"|')?\\)$/, "$1")
-        : essentialIcon;
-
-      // IMPORTANT: explicitUnloadTabs() is asynchronous. The previous version
-      // restored the icon on the next animation frame, which could happen
-      // BEFORE Zen finished saving the unloaded tab state. Zen then overwrote
-      // our icon with the empty state. Wait for the native unload to finish.
       const successful = await gBrowser.explicitUnloadTabs([tab]);
       if (!successful) {
         console.warn(LOG, "explicitUnloadTabs returned false");
@@ -61,34 +102,12 @@
 
       if (!tab.isConnected || !tab.hasAttribute("zen-essential")) return;
 
-      if (iconUrl) {
-        // Restore Zen's Essential-specific CSS icon.
-        if (typeof gZenPinnedTabManager !== "undefined" &&
-            gZenPinnedTabManager &&
-            typeof gZenPinnedTabManager.setEssentialTabIcon === "function") {
-          gZenPinnedTabManager.setEssentialTabIcon(tab, iconUrl);
-        }
-
-        // Restore the DOM image attribute if the native unload cleared it.
-        if (!tab.getAttribute("image")) {
-          tab.setAttribute("image", iconUrl);
-        }
-
-        // Most importantly, persist the icon in Firefox/Zen's session state so
-        // it survives another unload and a full browser restart.
-        try {
-          const state = JSON.parse(SessionStore.getTabState(tab));
-          state.image = iconUrl;
-          SessionStore.setTabState(tab, state);
-        } catch (stateError) {
-          console.error(LOG, "Failed to persist Essential Tab icon:", stateError);
-        }
-      }
+      // Restore only after native unload has completed.
+      if (iconUrl) persistEssentialIcon(tab, iconUrl);
     } catch (e) {
       console.error(LOG, "Failed to unload Essential Tab:", e);
     }
   }
-
 
   function animateEssentialToNormal(sourceTab, targetTab) {
     try {
@@ -126,8 +145,6 @@
       targetContent.style.opacity = "0";
 
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        // Move from the Essential Tab's center to the normal tab's center
-        // while growing exactly to the normal tab's dimensions.
         const fromCenterX = from.left + from.width / 2;
         const fromCenterY = from.top + from.height / 2;
         const toCenterX = to.left + to.width / 2;
@@ -138,7 +155,6 @@
         const scaleY = to.height / from.height;
 
         clone.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scaleX}, ${scaleY})`;
-        clone.style.opacity = "1";
 
         setTimeout(() => {
           clone.remove();
@@ -165,11 +181,7 @@
 
       duplicateOrigins.set(newTab, sourceTab);
       gBrowser.selectedTab = newTab;
-
-      // Animate the visual tab content from Essentials into the new normal tab.
       animateEssentialToNormal(sourceTab, newTab);
-
-      // The original Essential remains as a button, but its document is unloaded.
       await unloadEssential(sourceTab);
     } catch (e) {
       console.error(LOG, "Failed to convert duplicate:", e);
@@ -185,8 +197,11 @@
     event.stopPropagation();
     event.stopImmediatePropagation();
 
+    // Capture icon BEFORE the duplicate/unload sequence changes anything.
+    captureEssentialIcon(sourceTab);
+
     try {
-      const newTab = gBrowser.duplicateTab(sourceTab, 1);
+      const newTab = gBrowser.duplicateTab(sourceTab, true);
       if (!newTab) return;
 
       const finish = () => convertDuplicateToNormalTab(newTab, sourceTab);
@@ -205,19 +220,14 @@
 
   function isNormalOpenTab(tab, closingTab) {
     return tab && tab !== closingTab && tab.isConnected && !tab.hidden &&
-      !tab.pinned && !tab.hasAttribute("zen-essential") &&
-      !tab.closing;
+      !tab.pinned && !tab.hasAttribute("zen-essential") && !tab.closing;
   }
 
-  // Work only with normal tabs in the current tab list.  Do not rely on
-  // visibleTabs here because Zen may be in the middle of its own selection
-  // update while TabClose is firing.
-  function getNextNormalTabBeforeClose(closingTab) {
+  function getNearestNormalTab(closingTab) {
     const tabs = Array.from(gBrowser.tabs || []);
     const index = tabs.indexOf(closingTab);
     if (index < 0) return null;
 
-    // Prefer the tab immediately to the right, then the closest tab to the left.
     for (let i = index + 1; i < tabs.length; i++) {
       if (isNormalOpenTab(tabs[i], closingTab)) return tabs[i];
     }
@@ -227,10 +237,9 @@
     return null;
   }
 
-  function getAnyNormalTab() {
+  function getAnyNormalTab(excludeTab = null) {
     return Array.from(gBrowser.tabs || []).find(tab =>
-      tab && tab.isConnected && !tab.hidden && !tab.pinned &&
-      !tab.hasAttribute("zen-essential") && !tab.closing
+      isNormalOpenTab(tab, excludeTab)
     ) || null;
   }
 
@@ -249,24 +258,31 @@
     }
   }
 
-  function openHomepageWithoutExtraBlank() {
-    try {
-      let current = gBrowser.selectedTab;
-
-      // Zen/Firefox may leave one fresh blank normal tab after the final
-      // content tab is closed. Reuse it instead of creating another tab.
-      if (current && !current.pinned && !current.hasAttribute("zen-essential") && isBlankTab(current)) {
-        current.linkedBrowser.loadURI(getHomepage(), {
-          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()
-        });
-        return current;
-      }
-
-      return gBrowser.addTab(getHomepage(), { inBackground: false });
-    } catch (e) {
-      console.error(LOG, "Failed to open homepage:", e);
-      return gBrowser.addTab("about:home", { inBackground: false });
+  function selectOrOpenFallback(targetTab) {
+    if (targetTab && targetTab.isConnected && !targetTab.closing &&
+        !targetTab.pinned && !targetTab.hasAttribute("zen-essential")) {
+      gBrowser.selectedTab = targetTab;
+      return true;
     }
+
+    const anyNormal = getAnyNormalTab();
+    if (anyNormal) {
+      gBrowser.selectedTab = anyNormal;
+      return true;
+    }
+
+    // No ordinary tabs left: use the current ordinary blank tab if Zen created one,
+    // otherwise create exactly one normal homepage tab.
+    const current = gBrowser.selectedTab;
+    if (current && !current.pinned && !current.hasAttribute("zen-essential") && isBlankTab(current)) {
+      current.linkedBrowser.loadURI(getHomepage(), {
+        triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()
+      });
+      return true;
+    }
+
+    gBrowser.addTab(getHomepage(), { inBackground: false });
+    return true;
   }
 
   function handleTabClose(event) {
@@ -274,39 +290,25 @@
     const source = duplicateOrigins.get(closingTab);
     if (!source) return;
 
-    // IMPORTANT: determine the fallback BEFORE Zen removes the tab from its
-    // own tab array. This avoids the race that was causing a blank page to be
-    // left selected even when another normal tab was already open.
-    const fallbackTab = getNextNormalTabBeforeClose(closingTab);
+    // Choose the fallback while the closing tab is still in gBrowser.tabs.
+    const fallbackTab = getNearestNormalTab(closingTab);
     duplicateOrigins.delete(closingTab);
 
-    // Let native Zen finish the close operation first. Then enforce our desired
-    // selection after Zen has completed its own TabSelect/TabClose handling.
-    const chooseNext = () => {
+    // Keep forcing the desired selection while Zen finishes its own TabClose
+    // and animation/selection processing. This avoids landing on a transient
+    // blank/new-tab page after the close.
+    const enforce = () => {
       if (!gBrowser || !gBrowser.window || gBrowser.window.closed) return;
-
-      if (fallbackTab && fallbackTab.isConnected && !fallbackTab.closing &&
-          !fallbackTab.pinned && !fallbackTab.hasAttribute("zen-essential")) {
-        gBrowser.selectedTab = fallbackTab;
-        return;
-      }
-
-      // A second check catches tabs opened/closed while the close animation was
-      // still finishing. If any normal tab exists, always prefer it to Essential.
-      const anyNormal = getAnyNormalTab();
-      if (anyNormal) {
-        gBrowser.selectedTab = anyNormal;
-        return;
-      }
-
-      // No normal tabs remain: use the existing blank/new tab when possible,
-      // otherwise create exactly one homepage tab.
-      openHomepageWithoutExtraBlank();
+      selectOrOpenFallback(fallbackTab);
     };
 
-    // Two passes make this robust against Zen's asynchronous tab selection.
-    setTimeout(chooseNext, 0);
-    setTimeout(chooseNext, 80);
+    // TabClose can be followed by a later TabSelect from native Zen code.
+    // These passes intentionally happen after that native selection work.
+    setTimeout(enforce, 0);
+    setTimeout(enforce, 40);
+    setTimeout(enforce, 120);
+    setTimeout(enforce, 250);
+    setTimeout(enforce, 500);
   }
 
   function install() {
@@ -316,7 +318,7 @@
     tabs.addEventListener("click", duplicateEssential, true);
     gBrowser.tabContainer.addEventListener("TabClose", handleTabClose, true);
 
-    console.log(LOG, "Loaded 1.10.0");
+    console.log(LOG, "Loaded 1.11.0");
   }
 
   install();
