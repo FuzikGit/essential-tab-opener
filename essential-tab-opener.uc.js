@@ -39,6 +39,61 @@
     }
   }
 
+
+  function animateEssentialToNormal(sourceTab, targetTab) {
+    try {
+      const sourceContent = sourceTab.querySelector(".tab-content");
+      const targetContent = targetTab.querySelector(".tab-content");
+      if (!sourceContent || !targetContent) return;
+
+      const from = sourceContent.getBoundingClientRect();
+      const to = targetContent.getBoundingClientRect();
+      if (!from.width || !from.height || !to.width || !to.height) return;
+
+      const clone = sourceContent.cloneNode(true);
+      clone.setAttribute("data-essential-tab-opener-animation", "true");
+      Object.assign(clone.style, {
+        position: "fixed",
+        left: `${from.left}px`,
+        top: `${from.top}px`,
+        width: `${from.width}px`,
+        height: `${from.height}px`,
+        margin: "0",
+        padding: "0",
+        boxSizing: "border-box",
+        zIndex: "2147483647",
+        pointerEvents: "none",
+        transformOrigin: "center center",
+        transform: "translate3d(0, 0, 0) scale(1)",
+        opacity: "1",
+        transition: "transform 520ms cubic-bezier(.22,.61,.36,1), opacity 520ms ease",
+        willChange: "transform, opacity"
+      });
+
+      document.documentElement.appendChild(clone);
+
+      const oldTargetOpacity = targetContent.style.opacity;
+      targetContent.style.opacity = "0";
+
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const dx = to.left - from.left;
+        const dy = to.top - from.top;
+        const scaleX = Math.max(0.72, Math.min(1.08, to.width / from.width));
+        const scaleY = Math.max(0.72, Math.min(1.08, to.height / from.height));
+
+        clone.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scaleX}, ${scaleY})`;
+        clone.style.opacity = "0.05";
+
+        setTimeout(() => {
+          clone.remove();
+          targetContent.style.opacity = oldTargetOpacity;
+        }, 550);
+      }));
+    } catch (e) {
+      console.error(LOG, "Animation failed:", e);
+    }
+  }
+
   function convertDuplicateToNormalTab(newTab, sourceTab) {
     if (!newTab || !newTab.isConnected) return;
     try {
@@ -54,6 +109,9 @@
 
       duplicateOrigins.set(newTab, sourceTab);
       gBrowser.selectedTab = newTab;
+
+      // Animate the visual tab content from Essentials into the new normal tab.
+      animateEssentialToNormal(sourceTab, newTab);
 
       // The original Essential remains as a button, but its document is unloaded.
       unloadEssential(sourceTab);
@@ -154,7 +212,7 @@
     tabs.addEventListener("click", duplicateEssential, true);
     gBrowser.tabContainer.addEventListener("TabClose", handleTabClose, true);
 
-    console.log(LOG, "Loaded 1.5.0");
+    console.log(LOG, "Loaded 1.6.0");
   }
 
   install();
