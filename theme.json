@@ -11,7 +11,7 @@
   },
   "readme": "README.md",
   "author": "FuzikGit",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "tags": ["JavaScript", "Essential Tabs", "Tabs"],
   "fork": ["zen"]
 }

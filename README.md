@@ -1,4 +1,4 @@
-# Essential Tab Opener 1.11.0
+# Essential Tab Opener 1.12.0
 
 Sine JavaScript mod for Zen Browser 1.21.14b.
 
