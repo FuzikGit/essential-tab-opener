@@ -6,12 +6,20 @@
   "preferences": "preferences.json",
   "scripts": {
     "essential-tab-opener.uc.js": {
-      "include": ["chrome://browser/content/browser.xhtml"]
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ]
     }
   },
   "readme": "README.md",
   "author": "FuzikGit",
-  "version": "1.12.0",
-  "tags": ["JavaScript", "Essential Tabs", "Tabs"],
-  "fork": ["zen"]
+  "version": "1.13.0",
+  "tags": [
+    "JavaScript",
+    "Essential Tabs",
+    "Tabs"
+  ],
+  "fork": [
+    "zen"
+  ]
 }
