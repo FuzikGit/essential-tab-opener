@@ -1,8 +1,8 @@
 [
   {
+    "type": "checkbox",
     "property": "extensions.essentialtabopener.enabled",
     "label": "Enable Essential Tab Opener",
-    "type": "checkbox",
     "defaultValue": true
   }
 ]
