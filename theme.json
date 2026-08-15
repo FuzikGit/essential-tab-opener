@@ -1,0 +1,13 @@
+{
+  "id": "essential-tab-opener",
+  "name": "Essential Tab Opener",
+  "description": "Left-click an Essential Tab to duplicate it as a normal tab while keeping the original Essential Tab.",
+  "homepage": "https://github.com/FuzikGit/essential-tab-opener/",
+  "preferences": "https://github.com/FuzikGit/essential-tab-opener/main/preferences.json",
+  "js": true,
+  "readme": "https://github.com/FuzikGit/essential-tab-opener/main/README.md",
+  "author": "OpenAI",
+  "version": "1.3.0",
+  "tags": ["sine", "JavaScript", "Essential Tabs"],
+  "fork": ["zen"]
+}
