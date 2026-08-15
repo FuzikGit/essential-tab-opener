@@ -1,4 +1,4 @@
-# Essential Tab Opener 1.7.0
+# Essential Tab Opener 1.8.0
 
 Sine mod for Zen Browser 1.21.14b.
 
