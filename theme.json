@@ -1,7 +1,7 @@
 {
   "id": "essential-tab-opener",
   "name": "Essential Tab Opener",
-  "description": "Left-click an Essential Tab to duplicate it as a normal tab, animate it into the normal-tabs section, and unload the original Essential Tab.",
+  "description": "Left-click an Essential Tab to duplicate it as a normal tab, animate it into the normal-tabs section, unload the original Essential Tab, and select another normal tab when the duplicate is closed.",
   "homepage": "https://github.com/FuzikGit/essential-tab-opener",
   "preferences": "preferences.json",
   "scripts": {
@@ -13,7 +13,7 @@
   },
   "readme": "README.md",
   "author": "FuzikGit",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "tags": [
     "JavaScript",
     "Essential Tabs",

@@ -203,36 +203,66 @@
     }
   }
 
-  function isNormalVisibleTab(tab, closingTab) {
+  function isNormalOpenTab(tab, closingTab) {
     return tab && tab !== closingTab && tab.isConnected && !tab.hidden &&
-      !tab.pinned && !tab.hasAttribute("zen-essential");
+      !tab.pinned && !tab.hasAttribute("zen-essential") &&
+      !tab.closing;
   }
 
-  function getNextNormalTab(closingTab) {
-    const visible = Array.from(gBrowser.visibleTabs || []).filter(t => t !== closingTab);
-    if (!visible.length) return null;
-    const normal = visible.filter(t => isNormalVisibleTab(t, closingTab));
-    if (!normal.length) return null;
+  // Work only with normal tabs in the current tab list.  Do not rely on
+  // visibleTabs here because Zen may be in the middle of its own selection
+  // update while TabClose is firing.
+  function getNextNormalTabBeforeClose(closingTab) {
+    const tabs = Array.from(gBrowser.tabs || []);
+    const index = tabs.indexOf(closingTab);
+    if (index < 0) return null;
 
-    const all = Array.from(gBrowser.visibleTabs || []);
-    const index = all.indexOf(closingTab);
-    if (index >= 0) {
-      for (let i = index + 1; i < all.length; i++) {
-        if (isNormalVisibleTab(all[i], closingTab)) return all[i];
-      }
-      for (let i = index - 1; i >= 0; i--) {
-        if (isNormalVisibleTab(all[i], closingTab)) return all[i];
-      }
+    // Prefer the tab immediately to the right, then the closest tab to the left.
+    for (let i = index + 1; i < tabs.length; i++) {
+      if (isNormalOpenTab(tabs[i], closingTab)) return tabs[i];
     }
-    return normal[0];
+    for (let i = index - 1; i >= 0; i--) {
+      if (isNormalOpenTab(tabs[i], closingTab)) return tabs[i];
+    }
+    return null;
   }
 
-  function openHomepage() {
+  function getAnyNormalTab() {
+    return Array.from(gBrowser.tabs || []).find(tab =>
+      tab && tab.isConnected && !tab.hidden && !tab.pinned &&
+      !tab.hasAttribute("zen-essential") && !tab.closing
+    ) || null;
+  }
+
+  function isBlankTab(tab) {
+    if (!tab || !tab.linkedBrowser) return false;
+    const url = tab.linkedBrowser.currentURI?.spec || "";
+    return url === "about:blank" || url === "about:newtab" || url === "about:home";
+  }
+
+  function getHomepage() {
     try {
-      let homepage = Services.prefs.getStringPref("browser.startup.homepage", "about:home");
-      // Firefox can store multiple home pages separated by |; use the first one.
-      homepage = homepage.split("|")[0] || "about:home";
-      return gBrowser.addTab(homepage, { inBackground: false });
+      const homepage = Services.prefs.getStringPref("browser.startup.homepage", "about:home");
+      return homepage.split("|")[0] || "about:home";
+    } catch {
+      return "about:home";
+    }
+  }
+
+  function openHomepageWithoutExtraBlank() {
+    try {
+      let current = gBrowser.selectedTab;
+
+      // Zen/Firefox may leave one fresh blank normal tab after the final
+      // content tab is closed. Reuse it instead of creating another tab.
+      if (current && !current.pinned && !current.hasAttribute("zen-essential") && isBlankTab(current)) {
+        current.linkedBrowser.loadURI(getHomepage(), {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()
+        });
+        return current;
+      }
+
+      return gBrowser.addTab(getHomepage(), { inBackground: false });
     } catch (e) {
       console.error(LOG, "Failed to open homepage:", e);
       return gBrowser.addTab("about:home", { inBackground: false });
@@ -244,21 +274,39 @@
     const source = duplicateOrigins.get(closingTab);
     if (!source) return;
 
+    // IMPORTANT: determine the fallback BEFORE Zen removes the tab from its
+    // own tab array. This avoids the race that was causing a blank page to be
+    // left selected even when another normal tab was already open.
+    const fallbackTab = getNextNormalTabBeforeClose(closingTab);
     duplicateOrigins.delete(closingTab);
 
-    // Let Zen finish its own close/selection work first, then choose a normal tab.
-    setTimeout(() => {
+    // Let native Zen finish the close operation first. Then enforce our desired
+    // selection after Zen has completed its own TabSelect/TabClose handling.
+    const chooseNext = () => {
       if (!gBrowser || !gBrowser.window || gBrowser.window.closed) return;
 
-      const nextTab = getNextNormalTab(closingTab);
-      if (nextTab) {
-        gBrowser.selectedTab = nextTab;
+      if (fallbackTab && fallbackTab.isConnected && !fallbackTab.closing &&
+          !fallbackTab.pinned && !fallbackTab.hasAttribute("zen-essential")) {
+        gBrowser.selectedTab = fallbackTab;
         return;
       }
 
-      // No other normal tab exists: open the browser start/home page.
-      openHomepage();
-    }, 0);
+      // A second check catches tabs opened/closed while the close animation was
+      // still finishing. If any normal tab exists, always prefer it to Essential.
+      const anyNormal = getAnyNormalTab();
+      if (anyNormal) {
+        gBrowser.selectedTab = anyNormal;
+        return;
+      }
+
+      // No normal tabs remain: use the existing blank/new tab when possible,
+      // otherwise create exactly one homepage tab.
+      openHomepageWithoutExtraBlank();
+    };
+
+    // Two passes make this robust against Zen's asynchronous tab selection.
+    setTimeout(chooseNext, 0);
+    setTimeout(chooseNext, 80);
   }
 
   function install() {
@@ -268,7 +316,7 @@
     tabs.addEventListener("click", duplicateEssential, true);
     gBrowser.tabContainer.addEventListener("TabClose", handleTabClose, true);
 
-    console.log(LOG, "Loaded 1.7.0");
+    console.log(LOG, "Loaded 1.10.0");
   }
 
   install();

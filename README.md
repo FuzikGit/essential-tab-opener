@@ -32,3 +32,7 @@ Fixes Essential Tab favicon loss after unloading the original Essential Tab. The
 
 
 Version 1.9.0 waits for Zen's asynchronous unload to complete and persists the Essential favicon in SessionStore so it survives repeated unloads and browser restarts.
+
+
+## 1.10.0
+Fixed tab selection after closing a duplicated normal tab. The mod now determines the fallback tab before TabClose, waits for Zen's native selection handling, prefers the next normal tab to the right (then left), and only opens/reuses the homepage when no other normal tabs remain.
