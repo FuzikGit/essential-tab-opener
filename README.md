@@ -1,4 +1,4 @@
-# Essential Tab Opener 1.6.0
+# Essential Tab Opener 1.7.0
 
 Sine mod for Zen Browser 1.21.14b.
 
@@ -22,3 +22,7 @@ Requires `sine.allow-unsafe-js = true` for a GitHub/unpublished JavaScript mod.
 ## Animation
 
 When a plain left-click opens an Essential Tab, the tab content is shown in a short floating animation that moves from the Essential Tabs area to the new normal tab. The original Essential Tab remains in place and is unloaded.
+
+
+## Animation 1.7.0
+The animation now moves the visual tab content from the Essential Tab to the normal-tab section while simultaneously scaling from the Essential Tab size to the exact normal-tab size.

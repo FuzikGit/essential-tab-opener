@@ -64,9 +64,9 @@
         zIndex: "2147483647",
         pointerEvents: "none",
         transformOrigin: "center center",
-        transform: "translate3d(0, 0, 0) scale(1)",
+        transform: "translate3d(0, 0, 0) scale(1, 1)",
         opacity: "1",
-        transition: "transform 520ms cubic-bezier(.22,.61,.36,1), opacity 520ms ease",
+        transition: "transform 680ms cubic-bezier(.18,.72,.22,1), opacity 680ms ease",
         willChange: "transform, opacity"
       });
 
@@ -76,18 +76,24 @@
       targetContent.style.opacity = "0";
 
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        const dx = to.left - from.left;
-        const dy = to.top - from.top;
-        const scaleX = Math.max(0.72, Math.min(1.08, to.width / from.width));
-        const scaleY = Math.max(0.72, Math.min(1.08, to.height / from.height));
+        // Move from the Essential Tab's center to the normal tab's center
+        // while growing exactly to the normal tab's dimensions.
+        const fromCenterX = from.left + from.width / 2;
+        const fromCenterY = from.top + from.height / 2;
+        const toCenterX = to.left + to.width / 2;
+        const toCenterY = to.top + to.height / 2;
+        const dx = toCenterX - fromCenterX;
+        const dy = toCenterY - fromCenterY;
+        const scaleX = to.width / from.width;
+        const scaleY = to.height / from.height;
 
         clone.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${scaleX}, ${scaleY})`;
-        clone.style.opacity = "0.05";
+        clone.style.opacity = "1";
 
         setTimeout(() => {
           clone.remove();
           targetContent.style.opacity = oldTargetOpacity;
-        }, 550);
+        }, 720);
       }));
     } catch (e) {
       console.error(LOG, "Animation failed:", e);
@@ -212,7 +218,7 @@
     tabs.addEventListener("click", duplicateEssential, true);
     gBrowser.tabContainer.addEventListener("TabClose", handleTabClose, true);
 
-    console.log(LOG, "Loaded 1.6.0");
+    console.log(LOG, "Loaded 1.7.0");
   }
 
   install();
