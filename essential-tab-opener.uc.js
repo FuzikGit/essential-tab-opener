@@ -30,9 +30,47 @@
   function unloadEssential(tab) {
     try {
       if (!tab || !tab.isConnected || !tab.hasAttribute("zen-essential")) return;
-      if (!tab.hasAttribute("pending")) {
-        const ok = gBrowser.explicitUnloadTabs([tab]);
-        if (!ok) console.warn(LOG, "explicitUnloadTabs returned false");
+      if (tab.hasAttribute("pending")) return;
+
+      // Zen keeps the Essential Tab favicon separately. Unloading the tab can
+      // cause Firefox to clear the normal tab image; preserve the Essential
+      // icon before unloading and restore it afterwards.
+      const essentialIcon =
+        tab.getAttribute("image") ||
+        tab.zenStaticIcon ||
+        tab.style.getPropertyValue("--zen-essential-tab-icon");
+
+      const ok = gBrowser.explicitUnloadTabs([tab]);
+      if (!ok) {
+        console.warn(LOG, "explicitUnloadTabs returned false");
+        return;
+      }
+
+      if (essentialIcon) {
+        requestAnimationFrame(() => {
+          try {
+            if (!tab.isConnected || !tab.hasAttribute("zen-essential")) return;
+
+            // Restore the underlying image attribute when it was cleared.
+            if (!tab.getAttribute("image") && !essentialIcon.startsWith("url(")) {
+              tab.setAttribute("image", essentialIcon);
+            }
+
+            // Restore Zen's dedicated Essential icon variable.
+            if (typeof gZenPinnedTabManager !== "undefined" &&
+                gZenPinnedTabManager &&
+                typeof gZenPinnedTabManager.setEssentialTabIcon === "function") {
+              const iconUrl = essentialIcon.startsWith("url(")
+                ? essentialIcon.replace(/^url\((?:\"|')?(.*?)(?:\"|')?\)$/, "$1")
+                : essentialIcon;
+              if (iconUrl) {
+                gZenPinnedTabManager.setEssentialTabIcon(tab, iconUrl);
+              }
+            }
+          } catch (e) {
+            console.error(LOG, "Failed to restore Essential Tab icon:", e);
+          }
+        });
       }
     } catch (e) {
       console.error(LOG, "Failed to unload Essential Tab:", e);

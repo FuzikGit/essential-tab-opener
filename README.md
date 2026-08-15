@@ -26,3 +26,6 @@ When a plain left-click opens an Essential Tab, the tab content is shown in a sh
 
 ## Animation 1.7.0
 The animation now moves the visual tab content from the Essential Tab to the normal-tab section while simultaneously scaling from the Essential Tab size to the exact normal-tab size.
+
+## 1.8.0
+Fixes Essential Tab favicon loss after unloading the original Essential Tab. The mod preserves and restores Zen's dedicated Essential icon state after `explicitUnloadTabs()`.
